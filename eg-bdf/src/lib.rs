@@ -20,7 +20,9 @@ use embedded_graphics::{
     primitives::Rectangle,
 };
 
+mod serialized;
 mod text;
+pub use serialized::{SerializedBdfFont, SerializedBdfTextStyle};
 pub use text::BdfTextStyle;
 
 /// BDF font.
