@@ -20,8 +20,10 @@ use embedded_graphics::{
     primitives::Rectangle,
 };
 
+mod proportional;
 mod serialized;
 mod text;
+pub use proportional::{ProportionalFont, ProportionalTextStyle};
 pub use serialized::{SerializedBdfFont, SerializedBdfTextStyle};
 pub use text::BdfTextStyle;
 
