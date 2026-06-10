@@ -3,13 +3,13 @@ use embedded_graphics::{
     prelude::*,
     primitives::Rectangle,
     text::{
-        renderer::{TextMetrics, TextRenderer},
+        renderer::{CharacterStyle, TextMetrics, TextRenderer},
         Baseline,
     },
 };
 
 /// A proportional font
-pub trait ProportionalFont<'a> {
+pub trait ProportionalFont<'a>: Clone {
     /// Returns the global font ascent
     fn ascent(&self) -> u16;
 
@@ -89,6 +89,21 @@ impl<'a, F: ProportionalFont<'a>, C: PixelColor> ProportionalTextStyle<'a, F, C>
     pub fn new(font: &'a F, color: C) -> Self {
         Self { font, color }
     }
+}
+
+impl<'a, C: PixelColor, F: ProportionalFont<'a>> CharacterStyle
+    for ProportionalTextStyle<'a, F, C>
+{
+    type Color = C;
+
+    fn set_text_color(&mut self, text_color: Option<C>) {
+        // TODO: support transparent text
+        if let Some(color) = text_color {
+            self.color = color;
+        }
+    }
+
+    // TODO: implement additional methods
 }
 
 impl<'a, C: PixelColor, F: ProportionalFont<'a>> TextRenderer for ProportionalTextStyle<'a, F, C> {

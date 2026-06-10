@@ -22,10 +22,8 @@ use embedded_graphics::{
 
 mod proportional;
 mod serialized;
-mod text;
 pub use proportional::{ProportionalFont, ProportionalTextStyle};
 pub use serialized::{SerializedBdfFont, SerializedBdfTextStyle};
-pub use text::BdfTextStyle;
 
 /// BDF font.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -42,15 +40,8 @@ pub struct BdfFont<'a> {
     pub data: &'a [u8],
 }
 
-impl<'a> BdfFont<'a> {
-    fn get_glyph(&self, c: char) -> &'a BdfGlyph {
-        self.glyphs
-            .iter()
-            .find(|g| g.character == c)
-            // TODO: don't panic if replacement_character is invalid
-            .unwrap_or_else(|| &self.glyphs[self.replacement_character])
-    }
-}
+/// Unserialized BDF text style
+pub type BdfTextStyle<'a, C> = ProportionalTextStyle<'a, BdfFont<'a>, C>;
 
 /// BDF glyph information.
 // TODO: store more efficiently (e.g. use smaller integer types if possible, store as struct of arrays instead of array of structs)
