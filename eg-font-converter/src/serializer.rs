@@ -6,9 +6,9 @@ use eg_bdf::BdfFont;
 pub fn serialize(font: BdfFont) -> Vec<u8> {
     let mut data: Vec<u8> = Vec::new();
 
-    macro_rules! append_be_data {
+   macro_rules! append_be_data {
         ($e:expr, $t:ty) => {
-            data.extend_from_slice(&($e as $t).to_be_bytes())
+            data.extend_from_slice(&(<$t>::try_from($e)?).to_be_bytes())
         };
     }
 
