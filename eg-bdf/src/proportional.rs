@@ -9,41 +9,19 @@ use embedded_graphics::{
 };
 
 /// A proportional font
-pub trait ProportionalFont<'a>: Clone {
-    /// Returns the global font ascent
-    fn ascent(&self) -> u16;
+pub trait ProportionalFont<'a>{
+    // returns a struct containing ascent, descent, baseline_offset, and line_height
+    fn metrics(&self) -> &Metrics;
+    
+    // There are two options on how to handle the replacement glyph.
+    // Either return `None` if `c` is not found and let the renderer handle the replacement glyph:
 
-    /// Returns the global font descent
-    fn descent(&self) -> u16;
-
-    /// Returns index of the replacement character
-    fn replacement(&self) -> u32;
-
-    /// Data is indexed from the start of the data block, not the start of the font
-    ///
-    /// Example: `glyph.draw(position, self.color, &self.font.data[self.font.data_offset()..], target)?;`
-    fn data_offset(&self) -> usize;
-
-    /// Returns a slice of the binary bitmap data
-    fn data(&self) -> &'a [u8];
-
-    /// Finds the BDF glyph corresponding to a character
-    fn lookup(&self, c: char) -> BdfGlyph;
-
-    /// Returns the baseline offset
-    fn baseline_offset(&self, baseline: Baseline) -> i32 {
-        match baseline {
-            Baseline::Top => self.ascent().saturating_sub(1) as i32,
-            Baseline::Bottom => -(self.descent() as i32),
-            Baseline::Middle => (self.ascent() as i32 - self.descent() as i32) / 2,
-            Baseline::Alphabetic => 0,
-        }
-    }
-
-    /// Returns the default line height
-    fn line_height(&self) -> u32 {
-        (self.ascent() + self.descent()) as u32
-    }
+    // note the added lifetime, see changed `BdfGlyph` below
+    fn lookup(&self, c: char) -> Option<BdfGlyph<'_>>;
+    fn replacement_glyph(&self) -> BdfGlyph<'_>;
+    
+    // Or return the replacement glyph as part of `lookup`. `replacement_glyph` should then be unnecessary.
+    fn lookup(&self, c: char) -> BdfGlyph<'_>;
 }
 
 impl<'a> ProportionalFont<'a> for BdfFont<'a> {
