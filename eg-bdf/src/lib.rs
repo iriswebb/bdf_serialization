@@ -35,7 +35,7 @@ pub struct BdfFont<'a> {
     /// The descent in pixels.
     pub descent: u32,
     /// The glyph information.
-    pub glyphs: &'a [BdfGlyph],
+    pub glyphs: &'a [BdfGlyph<'a>],
     /// The bitmap data.
     pub data: &'a [u8],
 }
@@ -43,33 +43,28 @@ pub struct BdfFont<'a> {
 /// Unserialized BDF text style
 pub type BdfTextStyle<'a, C> = ProportionalTextStyle<'a, BdfFont<'a>, C>;
 
-/// BDF glyph information.
-// TODO: store more efficiently (e.g. use smaller integer types if possible, store as struct of arrays instead of array of structs)
+/// BDF glyph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BdfGlyph {
+pub struct BdfGlyph<'a> {
     /// The corresponding character.
     pub character: char,
     /// The glyph bounding box.
     pub bounding_box: Rectangle,
     /// The horizontal distance to the start point of the next glyph.
     pub device_width: u32,
-    /// The start index in the bitmap data.
-    pub start_index: usize,
+    /// The bitmap data of the glyph.
+    pub bitmap_data: &'a [u8],
 }
 
-impl BdfGlyph {
-    fn draw<D: DrawTarget>(
+impl<'a> BdfGlyph<'a> {
+    /// Draws a glyph at a certain place and color
+    pub fn draw<D: DrawTarget>(
         &self,
         position: Point,
         color: D::Color,
-        data: &[u8],
         target: &mut D,
     ) -> Result<(), D::Error> {
-        let mut data_iter = RawDataSlice::<RawU1, LittleEndian>::new(data).into_iter();
-
-        if self.start_index > 0 {
-            data_iter.nth(self.start_index - 1);
-        }
+        let mut data_iter = RawDataSlice::<RawU1, LittleEndian>::new(self.bitmap_data).into_iter();
 
         self.bounding_box
             .translate(position)

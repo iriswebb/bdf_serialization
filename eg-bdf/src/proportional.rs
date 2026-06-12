@@ -8,50 +8,57 @@ use embedded_graphics::{
     },
 };
 
-/// A proportional font
-pub trait ProportionalFont<'a>{
-    // returns a struct containing ascent, descent, baseline_offset, and line_height
-    fn metrics(&self) -> &Metrics;
-    
-    // There are two options on how to handle the replacement glyph.
-    // Either return `None` if `c` is not found and let the renderer handle the replacement glyph:
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
+pub struct Metrics {
+    pub ascent: u32,
+    pub descent: u32,
+    pub line_height: u32,
+}
 
-    // note the added lifetime, see changed `BdfGlyph` below
+/// A proportional font
+pub trait ProportionalFont<'a>: Clone {
+    /// Returns a struct containing ascent, descent, baseline_offset, and line_height
+    fn metrics(&self) -> Metrics;
+    /// Finds a BdfGlyph for a character
     fn lookup(&self, c: char) -> Option<BdfGlyph<'_>>;
+    /// Finds the replacement glyph
     fn replacement_glyph(&self) -> BdfGlyph<'_>;
-    
-    // Or return the replacement glyph as part of `lookup`. `replacement_glyph` should then be unnecessary.
-    fn lookup(&self, c: char) -> BdfGlyph<'_>;
+
+    /// Returns the baseline offset
+    fn baseline_offset(&self, baseline: Baseline) -> i32 {
+        match baseline {
+            Baseline::Top => self.metrics().ascent.saturating_sub(1) as i32,
+            Baseline::Bottom => -(self.metrics().descent as i32),
+            Baseline::Middle => (self.metrics().ascent as i32 - self.metrics().descent as i32) / 2,
+            Baseline::Alphabetic => 0,
+        }
+    }
+
+    /// Returns a glyph, or a replacement character if no corresponding glyph exists
+    fn glyph_or_replacement(&self, c: char) -> BdfGlyph<'_> {
+        self.lookup(c).unwrap_or(self.replacement_glyph())
+    }
 }
 
 impl<'a> ProportionalFont<'a> for BdfFont<'a> {
-    fn ascent(&self) -> u16 {
-        self.ascent as u16
+    fn metrics(&self) -> Metrics {
+        Metrics {
+            ascent: self.ascent,
+            descent: self.descent,
+            line_height: self.ascent + self.descent,
+        }
     }
 
-    fn descent(&self) -> u16 {
-        self.descent as u16
+    fn replacement_glyph(&self) -> BdfGlyph<'a> {
+        self.glyphs[self.replacement_character]
     }
 
-    fn replacement(&self) -> u32 {
-        self.replacement_character as u32
-    }
-
-    fn data_offset(&self) -> usize {
-        0
-    }
-
-    fn data(&self) -> &'a [u8] {
-        self.data
-    }
-
-    fn lookup(&self, c: char) -> BdfGlyph {
-        *self
-            .glyphs
-            .iter()
-            .find(|g| g.character == c)
-            // TODO: don't panic if replacement_character is invalid
-            .unwrap_or_else(|| &self.glyphs[self.replacement_character])
+    fn lookup(&self, c: char) -> Option<BdfGlyph<'_>> {
+        if let Some(&g) = self.glyphs.iter().find(|g| g.character == c) {
+            Some(g)
+        } else {
+            None
+        }
     }
 }
 
@@ -100,14 +107,9 @@ impl<'a, C: PixelColor, F: ProportionalFont<'a>> TextRenderer for ProportionalTe
         let mut position = position + Point::new(0, self.font.baseline_offset(baseline));
 
         for c in text.chars() {
-            let glyph = self.font.lookup(c);
+            let glyph = self.font.glyph_or_replacement(c);
 
-            glyph.draw(
-                position,
-                self.color,
-                &self.font.data()[self.font.data_offset()..],
-                target,
-            )?;
+            glyph.draw(position, self.color, target)?;
 
             position.x += glyph.device_width as i32;
         }
@@ -133,12 +135,15 @@ impl<'a, C: PixelColor, F: ProportionalFont<'a>> TextRenderer for ProportionalTe
     fn measure_string(&self, text: &str, position: Point, baseline: Baseline) -> TextMetrics {
         let position = position + Point::new(0, self.font.baseline_offset(baseline));
 
-        let dx = text.chars().map(|c| self.font.lookup(c).device_width).sum();
+        let dx = text
+            .chars()
+            .map(|c| self.font.glyph_or_replacement(c).device_width)
+            .sum();
 
         // TODO: calculate correct bounding box
         let bounding_box = Rectangle::new(
-            position - Size::new(0, self.font.ascent().saturating_sub(1) as u32),
-            Size::new(dx, self.line_height()),
+            position - Size::new(0, self.font.metrics().ascent.saturating_sub(1)),
+            Size::new(dx, self.font.metrics().line_height),
         );
 
         TextMetrics {
@@ -148,6 +153,6 @@ impl<'a, C: PixelColor, F: ProportionalFont<'a>> TextRenderer for ProportionalTe
     }
 
     fn line_height(&self) -> u32 {
-        self.font.line_height()
+        self.font.metrics().line_height
     }
 }

@@ -1,8 +1,5 @@
 use crate::{BdfGlyph, ProportionalFont, ProportionalTextStyle};
-use embedded_graphics::{
-    prelude::*,
-    primitives::Rectangle,
-};
+use embedded_graphics::{prelude::*, primitives::Rectangle};
 
 /// * Header (12 Bytes):
 /// -    Ascent  (pixels, u16 BE)
@@ -25,14 +22,19 @@ pub struct SerializedBdfFont<'a> {
     /// The raw u8 data of the serialized font
     pub data: &'a [u8],
 }
-impl SerializedBdfFont<'_> {
+impl<'a> SerializedBdfFont<'a> {
     /// Returns the length of the glyph table
     pub const fn character_count(self) -> u32 {
         u32::from_be_bytes([self.data[8], self.data[9], self.data[10], self.data[11]])
     }
 
+    /// Returns the offset of the data block
+    fn data_index(self) -> usize {
+        12 + (self.character_count() * 17) as usize
+    }
+
     /// Returns a BdfGlyph in the glyph table
-    pub const fn character_table(self, idx: u32) -> BdfGlyph {
+    pub fn character_table(self, idx: u32) -> BdfGlyph<'a> {
         let offset = 12 + (idx * 17) as usize;
         let corresponding_character = char::from_u32(u32::from_be_bytes([
             self.data[offset],
@@ -65,40 +67,34 @@ impl SerializedBdfFont<'_> {
                 },
             },
             device_width: kerning as u32,
-            start_index: data_index as usize,
+            bitmap_data: &self.data[(self.data_index() + data_index as usize)..],
         }
     }
 }
 impl<'a> ProportionalFont<'a> for SerializedBdfFont<'a> {
-    fn ascent(&self) -> u16 {
-        u16::from_be_bytes([self.data[0], self.data[1]])
+    fn metrics(&self) -> crate::proportional::Metrics {
+        crate::proportional::Metrics {
+            ascent: u16::from_be_bytes([self.data[0], self.data[1]]) as u32,
+            descent: u16::from_be_bytes([self.data[2], self.data[3]]) as u32,
+            line_height: (u16::from_be_bytes([self.data[0], self.data[1]])
+                + u16::from_be_bytes([self.data[2], self.data[3]])) as u32,
+        }
     }
 
-    fn descent(&self) -> u16 {
-        u16::from_be_bytes([self.data[2], self.data[3]])
+    fn replacement_glyph(&self) -> BdfGlyph<'_> {
+        let rpos = u32::from_be_bytes([self.data[4], self.data[5], self.data[6], self.data[7]]);
+        self.character_table(rpos)
     }
 
-    fn replacement(&self) -> u32 {
-        u32::from_be_bytes([self.data[4], self.data[5], self.data[6], self.data[7]])
-    }
-
-    fn data_offset(&self) -> usize {
-        (12 + (self.character_count() * 17)) as usize
-    }
-
-    fn data(&self) -> &'a [u8] {
-        self.data
-    }
-
-    fn lookup(&self, c: char) -> BdfGlyph {
+    fn lookup(&self, c: char) -> Option<BdfGlyph<'_>> {
         for i in 0..self.character_count() {
             let tested_character = self.character_table(i);
             if self.character_table(i).character == c {
-                return tested_character;
+                return Some(tested_character);
             }
         }
 
-        self.character_table(self.replacement())
+        None
     }
 }
 
