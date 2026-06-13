@@ -35,9 +35,33 @@ pub struct BdfFont<'a> {
     /// The descent in pixels.
     pub descent: u32,
     /// The glyph information.
-    pub glyphs: &'a [BdfGlyph<'a>],
+    pub glyphs: &'a [BdfGlyph],
     /// The bitmap data.
     pub data: &'a [u8],
+}
+
+/// BDF glyph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BdfGlyph {
+    /// The corresponding character.
+    pub character: char,
+    /// The glyph bounding box.
+    pub bounding_box: Rectangle,
+    /// The horizontal distance to the start point of the next glyph.
+    pub device_width: u32,
+    /// The bitmap data of the glyph.
+    pub start_index: usize,
+}
+
+impl<'a> BdfGlyph {
+    fn into_glyph(self, font: &'a BdfFont) -> DisplayBdfGlyph<'a> {
+        DisplayBdfGlyph {
+            character: self.character,
+            bounding_box: self.bounding_box,
+            device_width: self.device_width,
+            bitmap_data: &font.data[self.start_index..],
+        }
+    }
 }
 
 /// Unserialized BDF text style
@@ -45,7 +69,7 @@ pub type BdfTextStyle<'a, C> = ProportionalTextStyle<'a, BdfFont<'a>, C>;
 
 /// BDF glyph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BdfGlyph<'a> {
+pub struct DisplayBdfGlyph<'a> {
     /// The corresponding character.
     pub character: char,
     /// The glyph bounding box.
@@ -56,7 +80,7 @@ pub struct BdfGlyph<'a> {
     pub bitmap_data: &'a [u8],
 }
 
-impl<'a> BdfGlyph<'a> {
+impl<'a> DisplayBdfGlyph<'a> {
     /// Draws a glyph at a certain place and color
     pub fn draw<D: DrawTarget>(
         &self,

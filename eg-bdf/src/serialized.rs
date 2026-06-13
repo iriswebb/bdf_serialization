@@ -1,4 +1,4 @@
-use crate::{BdfGlyph, ProportionalFont, ProportionalTextStyle};
+use crate::{DisplayBdfGlyph, ProportionalFont, ProportionalTextStyle};
 use embedded_graphics::{prelude::*, primitives::Rectangle};
 
 /// * Header (12 Bytes):
@@ -34,7 +34,7 @@ impl<'a> SerializedBdfFont<'a> {
     }
 
     /// Returns a BdfGlyph in the glyph table
-    pub fn character_table(self, idx: u32) -> BdfGlyph<'a> {
+    pub fn character_table(self, idx: u32) -> DisplayBdfGlyph<'a> {
         let offset = 12 + (idx * 17) as usize;
         let corresponding_character = char::from_u32(u32::from_be_bytes([
             self.data[offset],
@@ -54,7 +54,7 @@ impl<'a> SerializedBdfFont<'a> {
             self.data[offset + 16],
         ]);
 
-        BdfGlyph {
+        DisplayBdfGlyph {
             character: corresponding_character.unwrap(),
             bounding_box: Rectangle {
                 top_left: Point {
@@ -81,12 +81,12 @@ impl<'a> ProportionalFont<'a> for SerializedBdfFont<'a> {
         }
     }
 
-    fn replacement_glyph(&self) -> BdfGlyph<'_> {
+    fn replacement_glyph(&self) -> DisplayBdfGlyph<'_> {
         let rpos = u32::from_be_bytes([self.data[4], self.data[5], self.data[6], self.data[7]]);
         self.character_table(rpos)
     }
 
-    fn lookup(&self, c: char) -> Option<BdfGlyph<'_>> {
+    fn lookup(&self, c: char) -> Option<DisplayBdfGlyph<'_>> {
         for i in 0..self.character_count() {
             let tested_character = self.character_table(i);
             if self.character_table(i).character == c {

@@ -3,10 +3,10 @@ use eg_bdf::BdfFont;
 /// Serializes a u8 vector from a BDF font
 ///
 /// This vector takes the format described in [eg-bdf::SerializedBdfFont]
-pub fn serialize(font: BdfFont) -> Vec<u8> {
+pub fn serialize(font: BdfFont) -> anyhow::Result<Vec<u8>> {
     let mut data: Vec<u8> = Vec::new();
 
-   macro_rules! append_be_data {
+    macro_rules! append_be_data {
         ($e:expr, $t:ty) => {
             data.extend_from_slice(&(<$t>::try_from($e)?).to_be_bytes())
         };
@@ -32,5 +32,5 @@ pub fn serialize(font: BdfFont) -> Vec<u8> {
     // Data
     data.extend_from_slice(font.data);
 
-    data
+    Ok(data)
 }

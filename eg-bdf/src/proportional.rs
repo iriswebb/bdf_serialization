@@ -1,4 +1,4 @@
-use crate::{BdfFont, BdfGlyph};
+use crate::{BdfFont, BdfGlyph, DisplayBdfGlyph};
 use embedded_graphics::{
     prelude::*,
     primitives::Rectangle,
@@ -20,9 +20,9 @@ pub trait ProportionalFont<'a>: Clone {
     /// Returns a struct containing ascent, descent, baseline_offset, and line_height
     fn metrics(&self) -> Metrics;
     /// Finds a BdfGlyph for a character
-    fn lookup(&self, c: char) -> Option<BdfGlyph<'_>>;
+    fn lookup(&self, c: char) -> Option<DisplayBdfGlyph<'_>>;
     /// Finds the replacement glyph
-    fn replacement_glyph(&self) -> BdfGlyph<'_>;
+    fn replacement_glyph(&'a self) -> DisplayBdfGlyph<'a>;
 
     /// Returns the baseline offset
     fn baseline_offset(&self, baseline: Baseline) -> i32 {
@@ -35,7 +35,7 @@ pub trait ProportionalFont<'a>: Clone {
     }
 
     /// Returns a glyph, or a replacement character if no corresponding glyph exists
-    fn glyph_or_replacement(&self, c: char) -> BdfGlyph<'_> {
+    fn glyph_or_replacement(&'a self, c: char) -> DisplayBdfGlyph<'a> {
         self.lookup(c).unwrap_or(self.replacement_glyph())
     }
 }
@@ -49,13 +49,13 @@ impl<'a> ProportionalFont<'a> for BdfFont<'a> {
         }
     }
 
-    fn replacement_glyph(&self) -> BdfGlyph<'a> {
-        self.glyphs[self.replacement_character]
+    fn replacement_glyph(&'a self) -> DisplayBdfGlyph<'a> {
+        self.glyphs[self.replacement_character].into_glyph(&self)
     }
 
-    fn lookup(&self, c: char) -> Option<BdfGlyph<'_>> {
+    fn lookup(&self, c: char) -> Option<DisplayBdfGlyph<'_>> {
         if let Some(&g) = self.glyphs.iter().find(|g| g.character == c) {
-            Some(g)
+            Some(g.into_glyph(self))
         } else {
             None
         }

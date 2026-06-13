@@ -98,7 +98,7 @@ fn convert(args: &Args) -> Result<()> {
     let font = converter.convert_mono_font()?;
 
     if args.serialize {
-        let sbdffont = eg_font_converter::serialize(converter.convert_eg_bdf().unwrap().as_font());
+        let sbdffont = eg_font_converter::serialize(converter.convert_eg_bdf().unwrap().as_font())?;
         if let Some(data) = &args.data {
             std::fs::write(data, &sbdffont)
                 .with_context(|| format!("Failed to write data file {}", data.to_string_lossy()))?;
