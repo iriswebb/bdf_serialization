@@ -1,4 +1,4 @@
-use crate::{BdfFont, BdfGlyph, DisplayBdfGlyph};
+use crate::{BdfFont, DisplayBdfGlyph};
 use embedded_graphics::{
     prelude::*,
     primitives::Rectangle,
@@ -50,7 +50,7 @@ impl<'a> ProportionalFont<'a> for BdfFont<'a> {
     }
 
     fn replacement_glyph(&'a self) -> DisplayBdfGlyph<'a> {
-        self.glyphs[self.replacement_character].into_glyph(&self)
+        self.glyphs[self.replacement_character].into_glyph(self)
     }
 
     fn lookup(&self, c: char) -> Option<DisplayBdfGlyph<'_>> {

@@ -20,39 +20,111 @@ use embedded_graphics::{prelude::*, primitives::Rectangle};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SerializedBdfFont<'a> {
     /// The raw u8 data of the serialized font
-    pub data: &'a [u8],
+    data: &'a [u8],
 }
 impl<'a> SerializedBdfFont<'a> {
+    // Structure Sizes
+    const HEADER_SIZE: usize = 12;
+    const CHARACTER_TABLE_ENTRY_SIZE: u32 = 17;
+
+    // Offsets for the header
+    const ASCENT_OFFSET: usize = 0;
+    const DESCENT_OFFSET: usize = 2;
+    const REPLACEMENT_OFFSET: usize = 4;
+    const CHAR_TABLE_LEN_OFFSET: usize = 8;
+
+    // Offsets for the character table entries
+    const CODEPOINT_OFFSET: usize = 0;
+    const TOPLEFTX_OFFSET: usize = 4;
+    const TOPLEFTY_OFFSET: usize = 6;
+    const SIZEX_OFFSET: usize = 8;
+    const SIZEY_OFFSET: usize = 10;
+    const KERN_OFFSET: usize = 12;
+    const IDX_OFFSET: usize = 13;
+
+    /// Constructs a serialized font without first verifing the data
+    pub const fn from_unverified_data(data: &'a [u8]) -> Self {
+        Self { data }
+    }
+
+    /// Verifies data in a way that prevents panics and returns a serialized font if the data is valid
+    ///
+    /// TODO: Make this const
+    pub fn verify_data(data: &'a [u8]) -> Result<Self, &'static str> {
+        // No header
+        if data.len() < 12 {
+            return Err("No header");
+        }
+
+        // Character table length invalid
+        let c_count = u16::from_be_bytes([
+            data[Self::CHAR_TABLE_LEN_OFFSET],
+            data[Self::CHAR_TABLE_LEN_OFFSET + 1],
+        ]);
+
+        let metadata_size: usize =
+            Self::HEADER_SIZE + ((c_count as usize) * (Self::CHARACTER_TABLE_ENTRY_SIZE) as usize);
+
+        // Character table too small
+        if data.len() < metadata_size {
+            return Err("No metadata");
+        }
+
+        // Safe to construct a font and index its metadata
+        let font = Self { data };
+
+        // Verify Each Entry
+        for i in 0..font.character_count() {
+            let offset = Self::HEADER_SIZE + (i * Self::CHARACTER_TABLE_ENTRY_SIZE) as usize;
+            // Corresponding Character Invalid
+            char::from_u32(font.get_be_u32(offset + Self::CODEPOINT_OFFSET))
+                .ok_or("Invalid character")?;
+
+            // Data index not within bitmap data
+            let idx = font.get_be_u32(offset + Self::IDX_OFFSET) as usize;
+
+            if idx > data.len() {
+                return Err("Invalid bitmap index");
+            }
+        }
+
+        // Data is okay
+        Ok(font)
+    }
+
+    fn get_be_i16(&self, idx: usize) -> i16 {
+        i16::from_be_bytes(self.data[idx..idx + 2].try_into().unwrap())
+    }
+
+    fn get_be_u16(&self, idx: usize) -> u16 {
+        u16::from_be_bytes(self.data[idx..idx + 2].try_into().unwrap())
+    }
+
+    fn get_be_u32(&self, idx: usize) -> u32 {
+        u32::from_be_bytes(self.data[idx..idx + 4].try_into().unwrap())
+    }
+
     /// Returns the length of the glyph table
-    pub const fn character_count(self) -> u32 {
-        u32::from_be_bytes([self.data[8], self.data[9], self.data[10], self.data[11]])
+    pub fn character_count(self) -> u32 {
+        self.get_be_u32(Self::CHAR_TABLE_LEN_OFFSET)
     }
 
     /// Returns the offset of the data block
     fn data_index(self) -> usize {
-        12 + (self.character_count() * 17) as usize
+        Self::HEADER_SIZE + (self.character_count() * Self::CHARACTER_TABLE_ENTRY_SIZE) as usize
     }
 
     /// Returns a BdfGlyph in the glyph table
     pub fn character_table(self, idx: u32) -> DisplayBdfGlyph<'a> {
-        let offset = 12 + (idx * 17) as usize;
-        let corresponding_character = char::from_u32(u32::from_be_bytes([
-            self.data[offset],
-            self.data[offset + 1],
-            self.data[offset + 2],
-            self.data[offset + 3],
-        ]));
-        let top_left_x = i16::from_be_bytes([self.data[offset + 4], self.data[offset + 5]]);
-        let top_left_y = i16::from_be_bytes([self.data[offset + 6], self.data[offset + 7]]);
-        let width = u16::from_be_bytes([self.data[offset + 8], self.data[offset + 9]]);
-        let height = u16::from_be_bytes([self.data[offset + 10], self.data[offset + 11]]);
-        let kerning = self.data[offset + 12];
-        let data_index = u32::from_be_bytes([
-            self.data[offset + 13],
-            self.data[offset + 14],
-            self.data[offset + 15],
-            self.data[offset + 16],
-        ]);
+        let offset = Self::HEADER_SIZE + (idx * Self::CHARACTER_TABLE_ENTRY_SIZE) as usize;
+        let corresponding_character =
+            char::from_u32(self.get_be_u32(offset + Self::CODEPOINT_OFFSET));
+        let top_left_x = self.get_be_i16(offset + Self::TOPLEFTX_OFFSET);
+        let top_left_y = self.get_be_i16(offset + Self::TOPLEFTY_OFFSET);
+        let width = self.get_be_u16(offset + Self::SIZEX_OFFSET);
+        let height = self.get_be_u16(offset + Self::SIZEY_OFFSET);
+        let kerning = self.data[offset + Self::KERN_OFFSET];
+        let data_index = self.get_be_u32(offset + Self::IDX_OFFSET);
 
         DisplayBdfGlyph {
             character: corresponding_character.unwrap(),
@@ -74,15 +146,15 @@ impl<'a> SerializedBdfFont<'a> {
 impl<'a> ProportionalFont<'a> for SerializedBdfFont<'a> {
     fn metrics(&self) -> crate::proportional::Metrics {
         crate::proportional::Metrics {
-            ascent: u16::from_be_bytes([self.data[0], self.data[1]]) as u32,
-            descent: u16::from_be_bytes([self.data[2], self.data[3]]) as u32,
-            line_height: (u16::from_be_bytes([self.data[0], self.data[1]])
-                + u16::from_be_bytes([self.data[2], self.data[3]])) as u32,
+            ascent: self.get_be_u16(Self::ASCENT_OFFSET) as u32,
+            descent: self.get_be_u16(Self::DESCENT_OFFSET) as u32,
+            line_height: self.get_be_u16(Self::ASCENT_OFFSET) as u32
+                + self.get_be_u16(Self::DESCENT_OFFSET) as u32,
         }
     }
 
     fn replacement_glyph(&self) -> DisplayBdfGlyph<'_> {
-        let rpos = u32::from_be_bytes([self.data[4], self.data[5], self.data[6], self.data[7]]);
+        let rpos = self.get_be_u32(Self::REPLACEMENT_OFFSET);
         self.character_table(rpos)
     }
 
