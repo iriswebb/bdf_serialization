@@ -116,7 +116,7 @@ fn try_main() -> Result<()> {
 
     let sbdf_data = eg_font_converter::serialize(bdf_font)?;
 
-    let serialized_bdf = eg_bdf::SerializedBdfFont::verify_data(&sbdf_data).unwrap();
+    let serialized_bdf = eg_bdf::SerializedBdfFont::new(&sbdf_data).unwrap();
 
     let mono_output = converter
         .convert_mono_font()

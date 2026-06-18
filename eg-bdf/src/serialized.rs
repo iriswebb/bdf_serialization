@@ -1,6 +1,18 @@
 use crate::{DisplayBdfGlyph, ProportionalFont, ProportionalTextStyle};
 use embedded_graphics::{prelude::*, primitives::Rectangle};
 
+const fn get_be_i16(data: &[u8], idx: usize) -> i16 {
+    i16::from_be_bytes([data[idx], data[idx + 1]])
+}
+
+const fn get_be_u16(data: &[u8], idx: usize) -> u16 {
+    u16::from_be_bytes([data[idx], data[idx + 1]])
+}
+
+const fn get_be_u32(data: &[u8], idx: usize) -> u32 {
+    u32::from_be_bytes([data[idx], data[idx + 1], data[idx + 2], data[idx + 3]])
+}
+
 /// * Header (12 Bytes):
 /// -    Ascent  (pixels, u16 BE)
 /// -    Descent (pixels, u16 BE)
@@ -25,7 +37,7 @@ pub struct SerializedBdfFont<'a> {
 impl<'a> SerializedBdfFont<'a> {
     // Structure Sizes
     const HEADER_SIZE: usize = 12;
-    const CHARACTER_TABLE_ENTRY_SIZE: u32 = 17;
+    const CHARACTER_TABLE_ENTRY_SIZE: usize = 17;
 
     // Offsets for the header
     const ASCENT_OFFSET: usize = 0;
@@ -47,84 +59,84 @@ impl<'a> SerializedBdfFont<'a> {
         Self { data }
     }
 
+    const fn character_table_data(
+        &self,
+        index: usize,
+    ) -> &[u8; SerializedBdfFont::CHARACTER_TABLE_ENTRY_SIZE] {
+        let (_header, data) = self
+            .data
+            .split_at(Self::HEADER_SIZE + (index * Self::CHARACTER_TABLE_ENTRY_SIZE));
+        data.first_chunk().unwrap()
+    }
+
     /// Verifies data in a way that prevents panics and returns a serialized font if the data is valid
     ///
     /// TODO: Make this const
-    pub fn verify_data(data: &'a [u8]) -> Result<Self, &'static str> {
+    pub fn new(data: &'a [u8]) -> Result<Self, &'static str> {
         // No header
         if data.len() < Self::HEADER_SIZE {
             return Err("No header");
         }
 
-        // Character table length invalid
-        let c_count = u16::from_be_bytes([
-            data[Self::CHAR_TABLE_LEN_OFFSET],
-            data[Self::CHAR_TABLE_LEN_OFFSET + 1],
-        ]);
+        // Safe to construct a font and index its header
+        let font = Self { data };
 
-        let metadata_size: usize =
-            Self::HEADER_SIZE + ((c_count as usize) * (Self::CHARACTER_TABLE_ENTRY_SIZE) as usize);
+        // Character table length invalid
 
         // Character table too small
-        if data.len() < metadata_size {
+        if data.len() < font.header_size() {
             return Err("No metadata");
         }
 
-        // Safe to construct a font and index its metadata
-        let font = Self { data };
+        // Safe to index the character table
 
         // Verify Each Entry
-        for i in 0..font.character_count() {
-            let offset = Self::HEADER_SIZE + (i * Self::CHARACTER_TABLE_ENTRY_SIZE) as usize;
+        let mut i = 0;
+        let c = font.character_count() as usize - 1;
+        loop {
+            let ctd = font.character_table_data(i);
             // Corresponding Character Invalid
-            char::from_u32(font.get_be_u32(offset + Self::CODEPOINT_OFFSET))
-                .ok_or("Invalid character")?;
+            if char::from_u32(get_be_u32(ctd, Self::CODEPOINT_OFFSET)).is_none() {
+                return Err("Invalid Unicode Codepoint");
+            }
 
             // Data index not within bitmap data
-            let idx = font.get_be_u32(offset + Self::IDX_OFFSET) as usize;
+            let idx = get_be_u32(ctd, Self::IDX_OFFSET) as usize;
 
             if idx > data.len() {
                 return Err("Invalid bitmap index");
             }
+
+            if i >= c {
+                break;
+            }
+            i += 1
         }
 
         // Data is okay
         Ok(font)
     }
 
-    fn get_be_i16(&self, idx: usize) -> i16 {
-        i16::from_be_bytes(self.data[idx..idx + 2].try_into().unwrap())
-    }
-
-    fn get_be_u16(&self, idx: usize) -> u16 {
-        u16::from_be_bytes(self.data[idx..idx + 2].try_into().unwrap())
-    }
-
-    fn get_be_u32(&self, idx: usize) -> u32 {
-        u32::from_be_bytes(self.data[idx..idx + 4].try_into().unwrap())
-    }
-
     /// Returns the length of the glyph table
-    pub fn character_count(self) -> u32 {
-        self.get_be_u32(Self::CHAR_TABLE_LEN_OFFSET)
+    pub const fn character_count(self) -> u32 {
+        get_be_u32(self.data, Self::CHAR_TABLE_LEN_OFFSET)
     }
 
     /// Returns the offset of the data block
-    fn data_index(self) -> usize {
-        Self::HEADER_SIZE + (self.character_count() * Self::CHARACTER_TABLE_ENTRY_SIZE) as usize
+    const fn header_size(self) -> usize {
+        Self::HEADER_SIZE + ((self.character_count() as usize) * Self::CHARACTER_TABLE_ENTRY_SIZE)
     }
 
     /// Returns a BdfGlyph in the glyph table
-    pub fn character_table(self, idx: u32) -> DisplayBdfGlyph<'a> {
-        let offset = Self::HEADER_SIZE + (idx * Self::CHARACTER_TABLE_ENTRY_SIZE) as usize;
-        let corresponding_character =
-            char::from_u32(self.get_be_u32(offset + Self::CODEPOINT_OFFSET));
-        let top_left_x = self.get_be_i16(offset + Self::TOPLEFTX_OFFSET);
-        let top_left_y = self.get_be_i16(offset + Self::TOPLEFTY_OFFSET);
-        let width = self.get_be_u16(offset + Self::SIZEX_OFFSET);
-        let height = self.get_be_u16(offset + Self::SIZEY_OFFSET);
-        let kerning = self.data[offset + Self::KERN_OFFSET];
-        let data_index = self.get_be_u32(offset + Self::IDX_OFFSET);
+    pub fn character_table(self, idx: usize) -> DisplayBdfGlyph<'a> {
+        let ctd = self.character_table_data(idx);
+        let corresponding_character = char::from_u32(get_be_u32(ctd, Self::CODEPOINT_OFFSET));
+        let top_left_x = get_be_i16(ctd, Self::TOPLEFTX_OFFSET);
+        let top_left_y = get_be_i16(ctd, Self::TOPLEFTY_OFFSET);
+        let width = get_be_u16(ctd, Self::SIZEX_OFFSET);
+        let height = get_be_u16(ctd, Self::SIZEY_OFFSET);
+        let kerning = ctd[Self::KERN_OFFSET];
+        let data_index = get_be_u32(ctd, Self::IDX_OFFSET);
 
         DisplayBdfGlyph {
             character: corresponding_character.unwrap(),
@@ -139,27 +151,28 @@ impl<'a> SerializedBdfFont<'a> {
                 },
             },
             device_width: u32::from(kerning),
-            bitmap_data: &self.data[(self.data_index() + data_index as usize)..],
+            bitmap_data: &self.data[(self.header_size() + data_index as usize)..],
         }
     }
 }
 impl<'a> ProportionalFont<'a> for SerializedBdfFont<'a> {
     fn metrics(&self) -> crate::proportional::Metrics {
         crate::proportional::Metrics {
-            ascent: self.get_be_u16(Self::ASCENT_OFFSET) as u32,
-            descent: self.get_be_u16(Self::DESCENT_OFFSET) as u32,
-            line_height: self.get_be_u16(Self::ASCENT_OFFSET) as u32
-                + self.get_be_u16(Self::DESCENT_OFFSET) as u32,
+            ascent: u32::from(get_be_u16(self.data, Self::ASCENT_OFFSET)),
+            descent: u32::from(get_be_u16(self.data, Self::DESCENT_OFFSET)),
+            line_height: u32::from(get_be_u16(self.data, Self::ASCENT_OFFSET))
+                + u32::from(get_be_u16(self.data, Self::DESCENT_OFFSET)),
         }
     }
 
     fn replacement_glyph(&self) -> DisplayBdfGlyph<'_> {
-        let rpos = self.get_be_u32(Self::REPLACEMENT_OFFSET);
-        self.character_table(rpos)
+        let rpos = get_be_u32(self.data, Self::REPLACEMENT_OFFSET);
+        self.character_table(rpos as usize)
     }
 
     fn lookup(&self, c: char) -> Option<DisplayBdfGlyph<'_>> {
-        for i in 0..self.character_count() {
+        // TODO, make this a binary search
+        for i in 0..(self.character_count() as usize) {
             let tested_character = self.character_table(i);
             if self.character_table(i).character == c {
                 return Some(tested_character);
