@@ -52,7 +52,7 @@ impl<'a> SerializedBdfFont<'a> {
     /// TODO: Make this const
     pub fn verify_data(data: &'a [u8]) -> Result<Self, &'static str> {
         // No header
-        if data.len() < 12 {
+        if data.len() < Self::HEADER_SIZE {
             return Err("No header");
         }
 
