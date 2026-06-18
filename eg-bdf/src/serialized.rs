@@ -130,15 +130,15 @@ impl<'a> SerializedBdfFont<'a> {
             character: corresponding_character.unwrap(),
             bounding_box: Rectangle {
                 top_left: Point {
-                    x: top_left_x as i32,
-                    y: top_left_y as i32,
+                    x: i32::from(top_left_x),
+                    y: i32::from(top_left_y),
                 },
                 size: Size {
-                    width: width as u32,
-                    height: height as u32,
+                    width: u32::from(width),
+                    height: u32::from(height),
                 },
             },
-            device_width: kerning as u32,
+            device_width: u32::from(kerning),
             bitmap_data: &self.data[(self.data_index() + data_index as usize)..],
         }
     }
