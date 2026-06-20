@@ -54,19 +54,14 @@ impl<'a> SerializedBdfFont<'a> {
     const KERN_OFFSET: usize = 12;
     const IDX_OFFSET: usize = 13;
 
-    /// Constructs a serialized font without first verifing the data
-    pub const fn from_unverified_data(data: &'a [u8]) -> Self {
-        Self { data }
-    }
-
     const fn character_table_data(
         &self,
         index: usize,
-    ) -> &[u8; SerializedBdfFont::CHARACTER_TABLE_ENTRY_SIZE] {
+    ) -> Option<&[u8; SerializedBdfFont::CHARACTER_TABLE_ENTRY_SIZE]> {
         let (_header, data) = self
             .data
             .split_at(Self::HEADER_SIZE + (index * Self::CHARACTER_TABLE_ENTRY_SIZE));
-        data.first_chunk().unwrap()
+        data.first_chunk()
     }
 
     /// Verifies data in a way that prevents panics and returns a serialized font if the data is valid
@@ -88,31 +83,6 @@ impl<'a> SerializedBdfFont<'a> {
             return Err("No metadata");
         }
 
-        // Safe to index the character table
-
-        // Verify Each Entry
-        let mut i = 0;
-        let c = font.character_count() as usize - 1;
-        loop {
-            let ctd = font.character_table_data(i);
-            // Corresponding Character Invalid
-            if char::from_u32(get_be_u32(ctd, Self::CODEPOINT_OFFSET)).is_none() {
-                return Err("Invalid Unicode Codepoint");
-            }
-
-            // Data index not within bitmap data
-            let idx = get_be_u32(ctd, Self::IDX_OFFSET) as usize;
-
-            if idx > data.len() {
-                return Err("Invalid bitmap index");
-            }
-
-            if i >= c {
-                break;
-            }
-            i += 1
-        }
-
         // Data is okay
         Ok(font)
     }
@@ -128,8 +98,8 @@ impl<'a> SerializedBdfFont<'a> {
     }
 
     /// Returns a BdfGlyph in the glyph table
-    pub fn character_table(self, idx: usize) -> DisplayBdfGlyph<'a> {
-        let ctd = self.character_table_data(idx);
+    pub fn character_table(self, idx: usize) -> Option<DisplayBdfGlyph<'a>> {
+        let ctd = self.character_table_data(idx)?;
         let corresponding_character = char::from_u32(get_be_u32(ctd, Self::CODEPOINT_OFFSET));
         let top_left_x = get_be_i16(ctd, Self::TOPLEFTX_OFFSET);
         let top_left_y = get_be_i16(ctd, Self::TOPLEFTY_OFFSET);
@@ -138,7 +108,7 @@ impl<'a> SerializedBdfFont<'a> {
         let kerning = ctd[Self::KERN_OFFSET];
         let data_index = get_be_u32(ctd, Self::IDX_OFFSET);
 
-        DisplayBdfGlyph {
+        Some(DisplayBdfGlyph {
             character: corresponding_character.unwrap(),
             bounding_box: Rectangle {
                 top_left: Point {
@@ -151,8 +121,10 @@ impl<'a> SerializedBdfFont<'a> {
                 },
             },
             device_width: u32::from(kerning),
-            bitmap_data: &self.data[(self.header_size() + data_index as usize)..],
-        }
+            bitmap_data: &self
+                .data
+                .get((self.header_size() + data_index as usize)..)?,
+        })
     }
 }
 impl<'a> ProportionalFont<'a> for SerializedBdfFont<'a> {
@@ -168,13 +140,16 @@ impl<'a> ProportionalFont<'a> for SerializedBdfFont<'a> {
     fn replacement_glyph(&self) -> DisplayBdfGlyph<'_> {
         let rpos = get_be_u32(self.data, Self::REPLACEMENT_OFFSET);
         self.character_table(rpos as usize)
+            .expect("Replacement character isn't valid")
     }
 
     fn lookup(&self, c: char) -> Option<DisplayBdfGlyph<'_>> {
         // TODO, make this a binary search
         for i in 0..(self.character_count() as usize) {
-            let tested_character = self.character_table(i);
-            if self.character_table(i).character == c {
+            let tested_character = self
+                .character_table(i)
+                .expect("Character table is corrupted");
+            if tested_character.character == c {
                 return Some(tested_character);
             }
         }
